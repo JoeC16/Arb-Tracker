@@ -2,18 +2,21 @@
 import streamlit as st
 import requests
 import os
-import time
 from dotenv import load_dotenv
-from datetime import datetime, timedelta
+from datetime import datetime
 
 load_dotenv()
 API_KEY = os.getenv("API_KEY")
-SPORT = 'soccer_epl'
-REGIONS = 'uk'
-MARKETS = 'h2h'
-URL = f'https://api.the-odds-api.com/v4/sports/{SPORT}/odds'
 
-SCAN_INTERVAL_MINUTES = 96  # ~15 scans per day
+SPORTS = {
+    "soccer": "⚽ Soccer (All Leagues)",
+    "tennis": "🎾 Tennis",
+    "mma": "🥊 MMA/UFC",
+    "basketball_nba": "🏀 Basketball (NBA)",
+    "americanfootball_nfl": "🏈 American Football (NFL)"
+}
+
+URL_TEMPLATE = "https://api.the-odds-api.com/v4/sports/{}/odds"
 
 def find_arbs(data):
     opportunities = []
@@ -37,7 +40,6 @@ def find_arbs(data):
             odds1 = best_odds[team1]['price']
             odds2 = best_odds[team2]['price']
             implied_prob = (1/odds1) + (1/odds2)
-
             if implied_prob < 1:
                 profit_margin = (1 - implied_prob) * 100
                 opportunities.append({
@@ -45,43 +47,43 @@ def find_arbs(data):
                     'team1': (team1, odds1, best_odds[team1]['bookmaker']),
                     'team2': (team2, odds2, best_odds[team2]['bookmaker']),
                     'profit_margin': round(profit_margin, 2),
-                    'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    'sport': match.get('sport_key', 'unknown')
                 })
 
     return opportunities
 
-st.set_page_config(page_title="Soccer Arb Scanner", layout="wide")
-st.title("⚽ Soccer Arbitrage Scanner (UK Bookmakers)")
+st.set_page_config(page_title="Multi-Sport Arb Scanner", layout="wide")
+st.title("🎯 Arbitrage Scanner — 5 Sports")
+st.caption("Scans for 2-outcome arbitrage from top UK bookmakers across multiple sports.")
 
-if 'last_scan' not in st.session_state:
-    st.session_state['last_scan'] = datetime.min
 if 'arb_history' not in st.session_state:
     st.session_state['arb_history'] = []
 
-now = datetime.now()
-if now - st.session_state['last_scan'] >= timedelta(minutes=SCAN_INTERVAL_MINUTES):
-    with st.spinner("Scanning for arbitrage opportunities..."):
-        params = {
-            'apiKey': API_KEY,
-            'regions': REGIONS,
-            'markets': MARKETS
-        }
-        resp = requests.get(URL, params=params)
-
-        if resp.status_code == 200:
-            matches = resp.json()
-            arbs = find_arbs(matches)
-            if arbs:
+if st.button("🔍 Run Arbitrage Scan Now"):
+    with st.spinner("Scanning all sports..."):
+        for sport_key in SPORTS.keys():
+            url = URL_TEMPLATE.format(sport_key)
+            params = {
+                'apiKey': API_KEY,
+                'regions': 'uk',
+                'markets': 'h2h'
+            }
+            response = requests.get(url, params=params)
+            if response.status_code == 200:
+                data = response.json()
+                arbs = find_arbs(data)
                 st.session_state['arb_history'].extend(arbs)
-            st.session_state['last_scan'] = now
-        else:
-            st.error(f"API Error: {resp.status_code} - {resp.text}")
+            else:
+                st.error(f"{SPORTS[sport_key]} API Error: {response.status_code}")
 
 if st.session_state['arb_history']:
+    st.header("📋 Arbitrage Opportunities Found")
     for arb in reversed(st.session_state['arb_history']):
-        st.subheader(f"{arb['match'][0]} vs {arb['match'][1]}  ({arb['timestamp']})")
+        st.subheader(f"{arb['match'][0]} vs {arb['match'][1]} ({arb['timestamp']})")
+        st.caption(f"Sport: {arb['sport']}")
         st.write(f"**{arb['team1'][0]}**: {arb['team1'][1]} @ {arb['team1'][2]}")
         st.write(f"**{arb['team2'][0]}**: {arb['team2'][1]} @ {arb['team2'][2]}")
         st.success(f"💰 Arbitrage Profit Margin: **{arb['profit_margin']}%**")
 else:
-    st.info("No arbitrage opportunities found yet. Please wait for next scan.")
+    st.info("No arbitrage opportunities found yet. Click the scan button above to run.")
