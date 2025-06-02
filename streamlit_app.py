@@ -79,7 +79,7 @@ if now - st.session_state['last_scan'] >= timedelta(minutes=SCAN_INTERVAL_MINUTE
 
 if st.session_state['arb_history']:
     for arb in reversed(st.session_state['arb_history']):
-        st.subheader(f"{arb['match'][0]} vs {arb['match'][1]']}  ({arb['timestamp']})")
+        st.subheader(f"{arb['match'][0]} vs {arb['match'][1]}  ({arb['timestamp']})")
         st.write(f"**{arb['team1'][0]}**: {arb['team1'][1]} @ {arb['team1'][2]}")
         st.write(f"**{arb['team2'][0]}**: {arb['team2'][1]} @ {arb['team2'][2]}")
         st.success(f"💰 Arbitrage Profit Margin: **{arb['profit_margin']}%**")
