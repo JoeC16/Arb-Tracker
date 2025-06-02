@@ -40,10 +40,11 @@ def find_arbs(data):
             odds1 = best_odds[team1]['price']
             odds2 = best_odds[team2]['price']
             implied_prob = (1/odds1) + (1/odds2)
+
             if implied_prob < 1:
                 profit_margin = (1 - implied_prob) * 100
                 opportunities.append({
-                    'match': match['teams'],
+                    'match': match.get('teams', [team1, team2]),
                     'team1': (team1, odds1, best_odds[team1]['bookmaker']),
                     'team2': (team2, odds2, best_odds[team2]['bookmaker']),
                     'profit_margin': round(profit_margin, 2),
