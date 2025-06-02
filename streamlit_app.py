@@ -11,7 +11,7 @@ API_KEY = os.getenv("API_KEY")
 SPORTS = {
     "soccer": "⚽ Soccer (All Leagues)",
     "tennis": "🎾 Tennis",
-    "mma": "🥊 MMA/UFC",
+    "sports_mma": "🥊 MMA/UFC",
     "basketball_nba": "🏀 Basketball (NBA)",
     "americanfootball_nfl": "🏈 American Football (NFL)"
 }
