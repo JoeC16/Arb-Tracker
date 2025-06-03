@@ -8,8 +8,9 @@ from datetime import datetime
 load_dotenv()
 API_KEY = os.getenv("API_KEY")
 SPORTS_URL = "https://api.the-odds-api.com/v4/sports"
-MARKETS = "h2h"
+MARKETS = "h2h,spreads,totals,team_totals"
 REGIONS = "uk,us,eu,au"
+EXCHANGES = ['betfair', 'smarkets']
 
 def get_all_sport_keys():
     try:
@@ -26,6 +27,8 @@ def find_arbs(data, sport_key):
     opportunities = []
     for match in data:
         for bookmaker in match.get('bookmakers', []):
+            if bookmaker['title'].lower() not in EXCHANGES:
+                continue
             for market in bookmaker.get('markets', []):
                 if 'lay' in market['key'].lower():
                     continue
@@ -49,9 +52,9 @@ def find_arbs(data, sport_key):
                     })
     return opportunities
 
-st.set_page_config(page_title="Arb Tracker", layout="wide")
-st.title("🌍 Arb Scanner (All Regions)")
-st.caption("Scans 'h2h' markets from UK, US, EU, and AU books")
+st.set_page_config(page_title="Expanded Arb Tracker", layout="wide")
+st.title("🔍 Arbitrage Scanner — Expanded Markets (Exchanges Only)")
+st.caption("Markets scanned: H2H, Spreads, Totals, Team Totals. Bookies: Betfair, Smarkets.")
 
 sports_dict = get_all_sport_keys()
 if not sports_dict:
@@ -105,4 +108,4 @@ if st.session_state['arb_history']:
             st.write(f"Bet £{s2} on {arb['team2'][0]}")
             st.success(f"Guaranteed Profit: £{profit}")
 else:
-    st.info("No arbs found yet.")
+    st.info("No arbitrage opportunities found.")
