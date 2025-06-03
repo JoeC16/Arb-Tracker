@@ -10,7 +10,6 @@ API_KEY = os.getenv("API_KEY")
 SPORTS_URL = "https://api.the-odds-api.com/v4/sports"
 REGIONS = "uk,us,eu,au"
 MARKET_POOL = ["h2h", "spreads", "totals", "team_totals"]
-EXCHANGES = ['betfair', 'smarkets']
 
 def get_all_sport_keys():
     try:
@@ -37,8 +36,6 @@ def find_arbs(data, sport_key):
     opportunities = []
     for match in data:
         for bookmaker in match.get('bookmakers', []):
-            if bookmaker['title'].lower() not in EXCHANGES:
-                continue
             for market in bookmaker.get('markets', []):
                 if 'lay' in market['key'].lower():
                     continue
@@ -62,9 +59,9 @@ def find_arbs(data, sport_key):
                     })
     return opportunities
 
-st.set_page_config(page_title="Expanded Arb Tracker (Auto Markets)", layout="wide")
-st.title("🔍 Arbitrage Scanner — Auto Market Matching")
-st.caption("Scans only valid markets per sport: H2H, Spreads, Totals, Team Totals. Exchanges: Betfair & Smarkets.")
+st.set_page_config(page_title="Full Market Arb Tracker", layout="wide")
+st.title("🔍 Arbitrage Scanner — All Bookmakers")
+st.caption("Scans across all available bookmakers and valid markets per sport.")
 
 sports_dict = get_all_sport_keys()
 if not sports_dict:
