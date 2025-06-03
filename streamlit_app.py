@@ -8,8 +8,8 @@ from datetime import datetime
 load_dotenv()
 API_KEY = os.getenv("API_KEY")
 SPORTS_URL = "https://api.the-odds-api.com/v4/sports"
-MARKETS = "h2h,spreads,totals,team_totals"
 REGIONS = "uk,us,eu,au"
+MARKET_POOL = ["h2h", "spreads", "totals", "team_totals"]
 EXCHANGES = ['betfair', 'smarkets']
 
 def get_all_sport_keys():
@@ -22,6 +22,16 @@ def get_all_sport_keys():
             return {}
     except:
         return {}
+
+def get_supported_markets(sport_key):
+    try:
+        url = f"https://api.the-odds-api.com/v4/sports/{sport_key}/markets"
+        response = requests.get(url, params={"apiKey": API_KEY}, timeout=10)
+        if response.status_code == 200:
+            return [m['key'] for m in response.json()]
+        return []
+    except:
+        return []
 
 def find_arbs(data, sport_key):
     opportunities = []
@@ -52,9 +62,9 @@ def find_arbs(data, sport_key):
                     })
     return opportunities
 
-st.set_page_config(page_title="Expanded Arb Tracker", layout="wide")
-st.title("🔍 Arbitrage Scanner — Expanded Markets (Exchanges Only)")
-st.caption("Markets scanned: H2H, Spreads, Totals, Team Totals. Bookies: Betfair, Smarkets.")
+st.set_page_config(page_title="Expanded Arb Tracker (Auto Markets)", layout="wide")
+st.title("🔍 Arbitrage Scanner — Auto Market Matching")
+st.caption("Scans only valid markets per sport: H2H, Spreads, Totals, Team Totals. Exchanges: Betfair & Smarkets.")
 
 sports_dict = get_all_sport_keys()
 if not sports_dict:
@@ -72,10 +82,19 @@ if 'arb_history' not in st.session_state:
 if st.button("🔍 Run Arbitrage Scan"):
     st.session_state['arb_history'] = []
     for sport_key in selected_sports:
+        supported = get_supported_markets(sport_key)
+        valid_markets = [m for m in MARKET_POOL if m in supported]
+        if not valid_markets:
+            st.warning(f"{sports_dict[sport_key]}: No supported 2-outcome markets found.")
+            continue
         try:
             resp = requests.get(
                 f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds",
-                params={"apiKey": API_KEY, "regions": REGIONS, "markets": MARKETS},
+                params={
+                    "apiKey": API_KEY,
+                    "regions": REGIONS,
+                    "markets": ",".join(valid_markets)
+                },
                 timeout=10
             )
             if resp.status_code == 200:
