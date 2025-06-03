@@ -26,27 +26,30 @@ def find_arbs(data, sport_key):
     for match in data:
         for bookmaker in match.get('bookmakers', []):
             for market in bookmaker.get('markets', []):
-                if len(market.get('outcomes', [])) == 2:
-                    o1, o2 = market['outcomes']
-                    name1, odds1 = o1['name'], o1['price']
-                    name2, odds2 = o2['name'], o2['price']
-                    implied_prob = (1/odds1) + (1/odds2)
-                    if implied_prob < 1:
-                        profit = (1 - implied_prob) * 100
-                        opportunities.append({
-                            'match': match.get('teams', [name1, name2]),
-                            'team1': (name1, odds1, bookmaker['title']),
-                            'team2': (name2, odds2, bookmaker['title']),
-                            'market': market['key'],
-                            'profit_margin': round(profit, 2),
-                            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                            'sport': sport_key
-                        })
+                outcomes = market.get('outcomes', [])
+                if len(outcomes) != 2:
+                    continue
+
+                o1, o2 = outcomes
+                name1, odds1 = o1['name'], o1['price']
+                name2, odds2 = o2['name'], o2['price']
+                implied_prob = (1/odds1) + (1/odds2)
+                if implied_prob < 1:
+                    profit = (1 - implied_prob) * 100
+                    opportunities.append({
+                        'match': match.get('teams', [name1, name2]),
+                        'team1': (name1, odds1, bookmaker['title']),
+                        'team2': (name2, odds2, bookmaker['title']),
+                        'market': market['key'],
+                        'profit_margin': round(profit, 2),
+                        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                        'sport': sport_key
+                    })
     return opportunities
 
 st.set_page_config(page_title="Arb Tracker", layout="wide")
-st.title("🎯 All-Sport Arbitrage Scanner")
-st.caption("Scan head-to-head, spread, and total markets across all OddsAPI sports.")
+st.title("🎯 Arbitrage Scanner (Filtered & Sorted)")
+st.caption("Now filters out invalid markets and ranks by profit %")
 
 sports_dict = get_all_sport_keys()
 
@@ -75,8 +78,10 @@ if st.button("🔍 Scan Now"):
             st.warning(f"{sports_dict[sport_key]}: {e}")
 
 if st.session_state['arb_history']:
-    st.header("💸 Arbitrage Opportunities")
-    for i, arb in enumerate(reversed(st.session_state['arb_history'])):
+    st.header("💸 Valid Arbitrage Opportunities (Sorted by Profit %)")
+    sorted_arbs = sorted(st.session_state['arb_history'], key=lambda x: x['profit_margin'], reverse=True)
+
+    for i, arb in enumerate(sorted_arbs):
         st.subheader(f"{arb['match'][0]} vs {arb['match'][1]} ({arb['timestamp']})")
         st.caption(f"Market: {arb['market']} | Sport: {arb['sport']}")
         st.write(f"**{arb['team1'][0]}**: {arb['team1'][1]} @ {arb['team1'][2]}")
@@ -95,4 +100,4 @@ if st.session_state['arb_history']:
             st.write(f"Bet £{s2} on {arb['team2'][0]}")
             st.success(f"Guaranteed Profit: £{profit}")
 else:
-    st.info("No arbs yet. Select sports and scan.")
+    st.info("No valid arbitrage opportunities found. Try scanning again.")
