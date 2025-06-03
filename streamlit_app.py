@@ -12,15 +12,13 @@ MARKETS = "h2h,spreads,totals"
 
 def get_all_sport_keys():
     try:
-        response = requests.get(SPORTS_URL, params={"apiKey": API_KEY})
+        response = requests.get(SPORTS_URL, params={"apiKey": API_KEY}, timeout=15)
         if response.status_code == 200:
             data = response.json()
             return {sport['key']: sport['title'] for sport in data if sport.get('active')}
         else:
-            st.error(f"Failed to fetch sports list: {response.status_code}")
             return {}
-    except Exception as e:
-        st.error(f"Error fetching sports list: {e}")
+    except Exception:
         return {}
 
 def find_arbs(data, sport_key):
@@ -46,13 +44,14 @@ def find_arbs(data, sport_key):
                         })
     return opportunities
 
-st.set_page_config(page_title="Select Sport Arb Scanner", layout="wide")
-st.title("🎯 Arbitrage Scanner with Sport Selector + Stake Calculator")
-st.caption("Scan selected sports from OddsAPI for H2H, Spread, and Total market arbitrage.")
+st.set_page_config(page_title="Arb Scanner", layout="wide")
+st.title("🎯 Arbitrage Scanner with Sport Selector")
+st.caption("Now with fallback handling to avoid black screens.")
 
 sports_dict = get_all_sport_keys()
 
 if not sports_dict:
+    st.error("⚠️ Could not load active sports list. Please check your API key or try again later.")
     st.stop()
 
 selected_sports = st.multiselect("Select Sports to Scan", options=list(sports_dict.keys()), format_func=lambda x: sports_dict[x])
@@ -60,7 +59,7 @@ selected_sports = st.multiselect("Select Sports to Scan", options=list(sports_di
 if 'arb_history' not in st.session_state:
     st.session_state['arb_history'] = []
 
-if st.button("🔍 Run Arbitrage Scan on Selected Sports"):
+if st.button("🔍 Run Arbitrage Scan"):
     with st.spinner("Scanning for arbitrage opportunities..."):
         for sport_key in selected_sports:
             try:
