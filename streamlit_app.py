@@ -26,9 +26,12 @@ def find_arbs(data, sport_key):
     for match in data:
         for bookmaker in match.get('bookmakers', []):
             for market in bookmaker.get('markets', []):
+                if 'lay' in market['key'].lower():
+                    continue  # exclude lay markets
+
                 outcomes = market.get('outcomes', [])
                 if len(outcomes) != 2:
-                    continue
+                    continue  # ensure exactly 2 outcomes
 
                 o1, o2 = outcomes
                 name1, odds1 = o1['name'], o1['price']
@@ -48,8 +51,8 @@ def find_arbs(data, sport_key):
     return opportunities
 
 st.set_page_config(page_title="Arb Tracker", layout="wide")
-st.title("🎯 Arbitrage Scanner (Filtered & Sorted)")
-st.caption("Now filters out invalid markets and ranks by profit %")
+st.title("🎯 Arbitrage Scanner (Back-Only, Filtered & Sorted)")
+st.caption("Filters out lay markets and invalid outcomes. Sorted by profit %.")
 
 sports_dict = get_all_sport_keys()
 
