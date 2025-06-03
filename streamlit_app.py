@@ -40,28 +40,29 @@ def find_arbs(data, sport_key):
                 if 'lay' in market['key'].lower():
                     continue
                 outcomes = market.get('outcomes', [])
-                if len(outcomes) != 2:
+                if not (2 <= len(outcomes) <= 3):
                     continue
-                o1, o2 = outcomes
-                name1, odds1 = o1['name'], o1['price']
-                name2, odds2 = o2['name'], o2['price']
-                implied_prob = (1/odds1) + (1/odds2)
-                if implied_prob < 1:
-                    profit = (1 - implied_prob) * 100
-                    opportunities.append({
-                        'match': match.get('teams', [name1, name2]),
-                        'team1': (name1, odds1, bookmaker['title']),
-                        'team2': (name2, odds2, bookmaker['title']),
-                        'market': market['key'],
-                        'profit_margin': round(profit, 2),
-                        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                        'sport': sport_key
-                    })
+                try:
+                    implied_prob = sum(1 / o['price'] for o in outcomes)
+                    if implied_prob < 1:
+                        profit = (1 - implied_prob) * 100
+                        match_teams = match.get('teams', [o['name'] for o in outcomes])
+                        opportunities.append({
+                            'match': match_teams,
+                            'outcomes': [(o['name'], o['price']) for o in outcomes],
+                            'bookmaker': bookmaker['title'],
+                            'market': market['key'],
+                            'profit_margin': round(profit, 2),
+                            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                            'sport': sport_key
+                        })
+                except:
+                    continue
     return opportunities
 
-st.set_page_config(page_title="Full Market Arb Tracker", layout="wide")
-st.title("🔍 Arbitrage Scanner — All Bookmakers")
-st.caption("Scans across all available bookmakers and valid markets per sport.")
+st.set_page_config(page_title="Multi-Outcome Arb Scanner", layout="wide")
+st.title("📊 Arbitrage Scanner — 2 & 3 Outcome Support")
+st.caption("Now includes 3-way markets (e.g. Win/Draw/Win). Scans all bookmakers and calculates optimal stakes.")
 
 sports_dict = get_all_sport_keys()
 if not sports_dict:
@@ -82,7 +83,7 @@ if st.button("🔍 Run Arbitrage Scan"):
         supported = get_supported_markets(sport_key)
         valid_markets = [m for m in MARKET_POOL if m in supported]
         if not valid_markets:
-            st.warning(f"{sports_dict[sport_key]}: No supported 2-outcome markets found.")
+            st.warning(f"{sports_dict[sport_key]}: No supported markets found.")
             continue
         try:
             resp = requests.get(
@@ -106,22 +107,20 @@ if st.session_state['arb_history']:
     st.header("✅ Sorted Arbitrage Opportunities")
     sorted_arbs = sorted(st.session_state['arb_history'], key=lambda x: x['profit_margin'], reverse=True)
     for i, arb in enumerate(sorted_arbs):
-        st.subheader(f"{arb['match'][0]} vs {arb['match'][1]} ({arb['timestamp']})")
-        st.caption(f"Market: {arb['market']} | Sport: {arb['sport']}")
-        st.write(f"{arb['team1'][0]} @ {arb['team1'][1]} ({arb['team1'][2]})")
-        st.write(f"{arb['team2'][0]} @ {arb['team2'][1]} ({arb['team2'][2]})")
+        st.subheader(f"{arb['match'][0]} vs {arb['match'][-1]} ({arb['timestamp']})")
+        st.caption(f"Market: {arb['market']} | Sport: {arb['sport']} | Bookmaker: {arb['bookmaker']}")
+        for name, odds in arb['outcomes']:
+            st.write(f"{name}: {odds}")
         st.success(f"Profit Margin: {arb['profit_margin']}%")
 
         with st.expander("💰 Stake Calculator"):
             stake = st.number_input(f"Total Stake #{i+1}", value=100.0, min_value=1.0, key=f"stake_{i}")
-            o1, o2 = arb['team1'][1], arb['team2'][1]
-            inv = (1/o1) + (1/o2)
-            s1 = round((1/o1)/inv * stake, 2)
-            s2 = round((1/o2)/inv * stake, 2)
-            payout = round(s1 * o1, 2)
+            inv = sum(1 / o[1] for o in arb['outcomes'])
+            splits = [(o[0], round((1 / o[1]) / inv * stake, 2), o[1]) for o in arb['outcomes']]
+            payout = round(splits[0][1] * splits[0][2], 2)
             profit = round(payout - stake, 2)
-            st.write(f"Bet £{s1} on {arb['team1'][0]}")
-            st.write(f"Bet £{s2} on {arb['team2'][0]}")
+            for name, amount, _ in splits:
+                st.write(f"Bet £{amount} on {name}")
             st.success(f"Guaranteed Profit: £{profit}")
 else:
     st.info("No arbitrage opportunities found.")
