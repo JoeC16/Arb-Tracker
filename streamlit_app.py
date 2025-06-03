@@ -11,13 +11,17 @@ SPORTS_URL = "https://api.the-odds-api.com/v4/sports"
 MARKETS = "h2h,spreads,totals"
 
 def get_all_sport_keys():
-    response = requests.get(SPORTS_URL, params={"apiKey": API_KEY})
-    if response.status_code == 200:
-        data = response.json()
-        return [sport['key'] for sport in data if sport.get('active')]
-    else:
-        st.error(f"Failed to fetch sports list: {response.status_code}")
-        return []
+    try:
+        response = requests.get(SPORTS_URL, params={"apiKey": API_KEY})
+        if response.status_code == 200:
+            data = response.json()
+            return {sport['key']: sport['title'] for sport in data if sport.get('active')}
+        else:
+            st.error(f"Failed to fetch sports list: {response.status_code}")
+            return {}
+    except Exception as e:
+        st.error(f"Error fetching sports list: {e}")
+        return {}
 
 def find_arbs(data, sport_key):
     opportunities = []
@@ -42,30 +46,39 @@ def find_arbs(data, sport_key):
                         })
     return opportunities
 
-st.set_page_config(page_title="All Sports Arb Scanner", layout="wide")
-st.title("🌍 Arbitrage Scanner Across All Available Sports")
-st.caption("Scans all active OddsAPI sports for 2-outcome arbitrage (manual trigger only).")
+st.set_page_config(page_title="Select Sport Arb Scanner", layout="wide")
+st.title("🎯 Arbitrage Scanner with Sport Selector + Stake Calculator")
+st.caption("Scan selected sports from OddsAPI for H2H, Spread, and Total market arbitrage.")
+
+sports_dict = get_all_sport_keys()
+
+if not sports_dict:
+    st.stop()
+
+selected_sports = st.multiselect("Select Sports to Scan", options=list(sports_dict.keys()), format_func=lambda x: sports_dict[x])
 
 if 'arb_history' not in st.session_state:
     st.session_state['arb_history'] = []
 
-if st.button("🔍 Run Full Sports Arbitrage Scan (may be slow)"):
-    with st.spinner("Fetching active sports list and scanning for arbitrage..."):
-        sport_keys = get_all_sport_keys()
-        for sport_key in sport_keys:
-            url = f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds"
-            params = {
-                'apiKey': API_KEY,
-                'regions': 'uk',
-                'markets': MARKETS
-            }
-            response = requests.get(url, params=params)
-            if response.status_code == 200:
-                data = response.json()
-                arbs = find_arbs(data, sport_key)
-                st.session_state['arb_history'].extend(arbs)
-            else:
-                st.warning(f"{sport_key}: API Error {response.status_code}")
+if st.button("🔍 Run Arbitrage Scan on Selected Sports"):
+    with st.spinner("Scanning for arbitrage opportunities..."):
+        for sport_key in selected_sports:
+            try:
+                url = f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds"
+                params = {
+                    'apiKey': API_KEY,
+                    'regions': 'uk',
+                    'markets': MARKETS
+                }
+                response = requests.get(url, params=params, timeout=15)
+                if response.status_code == 200:
+                    data = response.json()
+                    arbs = find_arbs(data, sport_key)
+                    st.session_state['arb_history'].extend(arbs)
+                else:
+                    st.warning(f"{sports_dict[sport_key]}: API Error {response.status_code}")
+            except Exception as e:
+                st.warning(f"{sports_dict[sport_key]}: Request failed - {e}")
 
 if st.session_state['arb_history']:
     st.header("📋 Arbitrage Opportunities Found")
@@ -89,4 +102,4 @@ if st.session_state['arb_history']:
             st.write(f"➡️ Stake **£{stake_b}** on {arb['team2'][0]} at {odds_b}")
             st.success(f"Guaranteed Payout: £{payout} — Profit: £{profit}")
 else:
-    st.info("No arbitrage opportunities found yet. Click the scan button above to run.")
+    st.info("No arbitrage opportunities found yet. Select sports and scan to begin.")
