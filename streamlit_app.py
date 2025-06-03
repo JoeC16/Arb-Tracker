@@ -8,7 +8,8 @@ from datetime import datetime
 load_dotenv()
 API_KEY = os.getenv("API_KEY")
 SPORTS_URL = "https://api.the-odds-api.com/v4/sports"
-MARKETS = "h2h,spreads,totals"
+MARKETS = "h2h"
+REGIONS = "uk,us,eu,au"
 
 def get_all_sport_keys():
     try:
@@ -27,12 +28,10 @@ def find_arbs(data, sport_key):
         for bookmaker in match.get('bookmakers', []):
             for market in bookmaker.get('markets', []):
                 if 'lay' in market['key'].lower():
-                    continue  # exclude lay markets
-
+                    continue
                 outcomes = market.get('outcomes', [])
                 if len(outcomes) != 2:
-                    continue  # ensure exactly 2 outcomes
-
+                    continue
                 o1, o2 = outcomes
                 name1, odds1 = o1['name'], o1['price']
                 name2, odds2 = o2['name'], o2['price']
@@ -51,48 +50,51 @@ def find_arbs(data, sport_key):
     return opportunities
 
 st.set_page_config(page_title="Arb Tracker", layout="wide")
-st.title("🎯 Arbitrage Scanner (Back-Only, Filtered & Sorted)")
-st.caption("Filters out lay markets and invalid outcomes. Sorted by profit %.")
+st.title("🌍 Arb Scanner (All Regions)")
+st.caption("Scans 'h2h' markets from UK, US, EU, and AU books")
 
 sports_dict = get_all_sport_keys()
-
 if not sports_dict:
-    st.error("⚠️ Could not load active sports. Check API key or connection.")
+    st.error("⚠️ Could not load sports list.")
     st.stop()
 
-selected_sports = st.multiselect("Select sports to scan", options=list(sports_dict.keys()), format_func=lambda x: sports_dict[x])
+all_keys = list(sports_dict.keys())
+selected_sports = st.multiselect("Choose sports", all_keys, format_func=lambda x: sports_dict[x])
+if st.button("Select All"):
+    selected_sports = all_keys
 
 if 'arb_history' not in st.session_state:
     st.session_state['arb_history'] = []
 
-if st.button("🔍 Scan Now"):
+if st.button("🔍 Run Arbitrage Scan"):
+    st.session_state['arb_history'] = []
     for sport_key in selected_sports:
         try:
-            url = f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds"
-            params = {"apiKey": API_KEY, "regions": "uk", "markets": MARKETS}
-            response = requests.get(url, params=params, timeout=15)
-            if response.status_code == 200:
-                data = response.json()
-                arbs = find_arbs(data, sport_key)
+            resp = requests.get(
+                f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds",
+                params={"apiKey": API_KEY, "regions": REGIONS, "markets": MARKETS},
+                timeout=10
+            )
+            if resp.status_code == 200:
+                arbs = find_arbs(resp.json(), sport_key)
                 st.session_state['arb_history'].extend(arbs)
             else:
-                st.warning(f"{sports_dict[sport_key]}: API Error {response.status_code}")
+                st.warning(f"{sports_dict[sport_key]}: API Error {resp.status_code}")
         except Exception as e:
             st.warning(f"{sports_dict[sport_key]}: {e}")
 
 if st.session_state['arb_history']:
-    st.header("💸 Valid Arbitrage Opportunities (Sorted by Profit %)")
+    st.header("✅ Sorted Arbitrage Opportunities")
     sorted_arbs = sorted(st.session_state['arb_history'], key=lambda x: x['profit_margin'], reverse=True)
-
     for i, arb in enumerate(sorted_arbs):
         st.subheader(f"{arb['match'][0]} vs {arb['match'][1]} ({arb['timestamp']})")
         st.caption(f"Market: {arb['market']} | Sport: {arb['sport']}")
-        st.write(f"**{arb['team1'][0]}**: {arb['team1'][1]} @ {arb['team1'][2]}")
-        st.write(f"**{arb['team2'][0]}**: {arb['team2'][1]} @ {arb['team2'][2]}")
-        st.success(f"Profit Margin: **{arb['profit_margin']}%**")
+        st.write(f"{arb['team1'][0]} @ {arb['team1'][1]} ({arb['team1'][2]})")
+        st.write(f"{arb['team2'][0]} @ {arb['team2'][1]} ({arb['team2'][2]})")
+        st.success(f"Profit Margin: {arb['profit_margin']}%")
 
-        with st.expander("📊 Stake Calculator"):
-            stake = st.number_input(f"Total Stake (£) #{i+1}", value=100.0, min_value=1.0, key=f"stake_{i}")
+        with st.expander("💰 Stake Calculator"):
+            stake = st.number_input(f"Total Stake #{i+1}", value=100.0, min_value=1.0, key=f"stake_{i}")
             o1, o2 = arb['team1'][1], arb['team2'][1]
             inv = (1/o1) + (1/o2)
             s1 = round((1/o1)/inv * stake, 2)
@@ -103,4 +105,4 @@ if st.session_state['arb_history']:
             st.write(f"Bet £{s2} on {arb['team2'][0]}")
             st.success(f"Guaranteed Profit: £{profit}")
 else:
-    st.info("No valid arbitrage opportunities found. Try scanning again.")
+    st.info("No arbs found yet.")
