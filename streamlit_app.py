@@ -44,12 +44,14 @@ def detect_arbitrage(event):
         return []
 
     arbitrages = []
+
     for bookmaker in event.get('bookmakers', []):
         for market in bookmaker.get('markets', []):
             outcomes = market.get('outcomes', [])
             if len(outcomes) not in [2, 3]:
                 continue
 
+            # Build a dictionary of the best odds per outcome
             best_odds = {}
             for outcome in outcomes:
                 name = outcome['name']
@@ -57,30 +59,49 @@ def detect_arbitrage(event):
                 if name not in best_odds or price > best_odds[name]['price']:
                     best_odds[name] = {'price': price, 'bookmaker': bookmaker['title']}
 
-            if len(best_odds) in [2, 3]:
-                odds = [o['price'] for o in best_odds.values()]
-                implied = calculate_implied_probabilities(odds)
-                total_implied = sum(implied)
-                if total_implied < 1.0:
-                    margin = (1 - total_implied) * 100
-                    if margin < MIN_PROFIT_MARGIN * 100:
-                        continue
-                    stakes = [(1/o)/total_implied * TOTAL_STAKE for o in odds]
-                    profit = min([s * o for s, o in zip(stakes, odds)]) - TOTAL_STAKE
-                    roi = profit / TOTAL_STAKE * 100
-                    arbitrages.append({
-                        'sport': event.get('sport_title', 'N/A'),
-                        'event': f"{event.get('home_team', '')} vs {event.get('away_team', '')}",
-                        'market': market['key'],
-                        'bookmakers': [o['bookmaker'] for o in best_odds.values()],
-                        'odds': odds,
-                        'outcomes': list(best_odds.keys()),
-                        'total_implied_prob': round(total_implied, 4),
-                        'profit_margin_%': round(margin, 2),
-                        'stake_distribution': [round(s, 2) for s in stakes],
-                        'guaranteed_profit_£': round(profit, 2),
-                        'ROI_%': round(roi, 2)
-                    })
+            # Safety: require full coverage for 2-way or 3-way market
+            if len(best_odds) != len(set(best_odds.keys())):
+                continue  # avoid duplicates
+
+            if len(best_odds) not in [2, 3]:
+                continue  # incomplete coverage
+
+            odds = [o['price'] for o in best_odds.values()]
+            implied = calculate_implied_probabilities(odds)
+            total_implied = sum(implied)
+
+            if total_implied >= 1.0:
+                continue  # no arb on implied probs
+
+            # Stake distribution
+            stakes = [(1/o)/total_implied * TOTAL_STAKE for o in odds]
+
+            # Simulate payout for each outcome
+            returns = [s * o for s, o in zip(stakes, odds)]
+            min_return = min(returns)
+
+            # 🔒 Enforce real arbitrage only
+            if min_return < TOTAL_STAKE:
+                continue  # fake arb or uncovered outcome
+
+            profit = min_return - TOTAL_STAKE
+            roi = profit / TOTAL_STAKE * 100
+
+            arbitrages.append({
+                'sport': event.get('sport_title', 'N/A'),
+                'event': f"{event.get('home_team', '')} vs {event.get('away_team', '')}",
+                'market': market['key'],
+                'bookmakers': [o['bookmaker'] for o in best_odds.values()],
+                'odds': odds,
+                'outcomes': list(best_odds.keys()),
+                'outcome_type': f"{len(best_odds)}-way",
+                'total_implied_prob': round(total_implied, 4),
+                'profit_margin_%': round((1 - total_implied) * 100, 2),
+                'stake_distribution': [round(s, 2) for s in stakes],
+                'guaranteed_profit_£': round(profit, 2),
+                'ROI_%': round(roi, 2)
+            })
+
     return arbitrages
 
 # UI
