@@ -47,42 +47,48 @@ def detect_arbitrage(event):
 
     for bookmaker in event.get('bookmakers', []):
         for market in bookmaker.get('markets', []):
+            market_key = market.get('key', '')
+
+            # ❌ Skip lay or exchange markets
+            if 'lay' in market_key or 'exchange' in market_key:
+                continue
+
             outcomes = market.get('outcomes', [])
             if len(outcomes) not in [2, 3]:
                 continue
 
-            # Build a dictionary of the best odds per outcome
             best_odds = {}
             for outcome in outcomes:
                 name = outcome['name']
                 price = outcome['price']
+
+                # ❌ Skip extreme/stale odds
+                if price > 50.0 or price <= 1.01:
+                    continue
+
                 if name not in best_odds or price > best_odds[name]['price']:
                     best_odds[name] = {'price': price, 'bookmaker': bookmaker['title']}
 
-            # Safety: require full coverage for 2-way or 3-way market
             if len(best_odds) != len(set(best_odds.keys())):
-                continue  # avoid duplicates
-
+                continue
             if len(best_odds) not in [2, 3]:
-                continue  # incomplete coverage
+                continue
 
             odds = [o['price'] for o in best_odds.values()]
             implied = calculate_implied_probabilities(odds)
             total_implied = sum(implied)
-
             if total_implied >= 1.0:
-                continue  # no arb on implied probs
+                continue
 
-            # Stake distribution
             stakes = [(1/o)/total_implied * TOTAL_STAKE for o in odds]
-
-            # Simulate payout for each outcome
             returns = [s * o for s, o in zip(stakes, odds)]
             min_return = min(returns)
 
-            # 🔒 Enforce real arbitrage only
+            # ❌ Reject non-profitable or unrealistic returns
             if min_return < TOTAL_STAKE:
-                continue  # fake arb or uncovered outcome
+                continue
+            if max(returns) > TOTAL_STAKE * 2:
+                continue
 
             profit = min_return - TOTAL_STAKE
             roi = profit / TOTAL_STAKE * 100
@@ -90,7 +96,7 @@ def detect_arbitrage(event):
             arbitrages.append({
                 'sport': event.get('sport_title', 'N/A'),
                 'event': f"{event.get('home_team', '')} vs {event.get('away_team', '')}",
-                'market': market['key'],
+                'market': market_key,
                 'bookmakers': [o['bookmaker'] for o in best_odds.values()],
                 'odds': odds,
                 'outcomes': list(best_odds.keys()),
@@ -104,7 +110,8 @@ def detect_arbitrage(event):
 
     return arbitrages
 
-# UI
+# --- Streamlit App ---
+
 st.set_page_config(page_title="UK Bookie Arbitrage Scanner", layout="wide")
 st.title("💸 UK Bookmaker Arbitrage Finder (Full Book Mode)")
 st.caption("Using a £100 fixed stake — scanning ALL markets from ALL UK bookmakers.")
