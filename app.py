@@ -5,7 +5,7 @@ import streamlit as st
 import requests
 import pandas as pd
 
-ODDS_API_KEY = "YOUR_API_KEY_HERE"
+ODDS_API_KEY = "e5cdfb14833bd219712d7ec1ce0b09b3"
 BASE_URL = "https://api.the-odds-api.com/v4"
 REGION = "uk"
 MARKET_TYPES = ['h2h', 'totals', 'spreads', 'draw_no_bet', 'double_chance']
