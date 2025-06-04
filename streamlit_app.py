@@ -1,94 +1,96 @@
 
 import streamlit as st
 import requests
-import os
-from dotenv import load_dotenv
 from datetime import datetime
 
-load_dotenv()
-API_KEY = os.getenv("API_KEY")
+API_KEY = st.secrets["API_KEY"]
+
+SPORT_KEYS = {
+    "soccer_epl": "⚽ Premier League",
+    "soccer_uefa_champs_league": "🏆 Champions League",
+    "soccer_spain_la_liga": "🇪🇸 La Liga",
+    "tennis_atp": "🎾 ATP Tour",
+    "tennis_wta": "🎾 WTA Tour"
+}
+
 REGIONS = "uk,us,eu,au"
+MARKETS = "h2h,spreads,totals,team_totals,draw_no_bet,double_chance,first_half_h2h"
 
-SPORT_MARKETS = {'soccer_epl': 'h2h,spreads,totals,draw_no_bet,double_chance', 'soccer_spain_la_liga': 'h2h,spreads,totals,draw_no_bet,double_chance', 'soccer_italy_serie_a': 'h2h,spreads,totals,draw_no_bet,double_chance', 'soccer_germany_bundesliga': 'h2h,spreads,totals,draw_no_bet,double_chance', 'soccer_france_ligue_one': 'h2h,spreads,totals,draw_no_bet,double_chance', 'soccer_uefa_champs_league': 'h2h,spreads,totals,draw_no_bet,double_chance', 'soccer_uefa_europa_league': 'h2h,spreads,totals,draw_no_bet,double_chance', 'soccer': 'h2h,spreads,totals'}
-
-SPORT_KEYS = {'soccer_epl': '⚽ EPL', 'soccer_spain_la_liga': '🇪🇸 La Liga', 'soccer_italy_serie_a': '🇮🇹 Serie A', 'soccer_germany_bundesliga': '🇩🇪 Bundesliga', 'soccer_france_ligue_one': '🇫🇷 Ligue 1', 'soccer_uefa_champs_league': '🌍 UEFA CL', 'soccer_uefa_europa_league': '🌍 Europa League', 'soccer': '🌍 Other Soccer Leagues'}
-
-st.set_page_config(page_title="Arb Scanner MVP", layout="wide")
-st.title("🚀 MVP Arbitrage Scanner")
-st.caption("Now using sport-specific market types to avoid 422 errors.")
+st.set_page_config(page_title="Arbitrage Scanner", layout="wide")
+st.title("💸 Arbitrage Scanner — Soccer + Tennis")
+st.caption("Live arbitrage detection with stake guide & 2% buffer")
 
 def find_arbs(data, sport_key):
-    opportunities = []
+    arbs = []
     for match in data:
-        for bookmaker in match.get('bookmakers', []):
-            for market in bookmaker.get('markets', []):
-                if 'lay' in market['key'].lower():
-                    continue
-                outcomes = market.get('outcomes', [])
+        for bookmaker in match.get("bookmakers", []):
+            for market in bookmaker.get("markets", []):
+                outcomes = market.get("outcomes", [])
                 if not (2 <= len(outcomes) <= 3):
                     continue
                 try:
-                    implied_prob = sum(1 / o['price'] for o in outcomes)
-                    if implied_prob < 1.02:
-                        profit = (1 - implied_prob) * 100
-                        match_teams = match.get('teams', [o['name'] for o in outcomes])
-                        opportunities.append({
-                            'match': match_teams,
-                            'outcomes': [(o['name'], o['price']) for o in outcomes],
-                            'bookmaker': bookmaker['title'],
-                            'market': market['key'],
-                            'profit_margin': round(profit, 2),
-                            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                            'sport': sport_key
+                    implied_prob = sum(1 / o["price"] for o in outcomes)
+                    if implied_prob < 1.02:  # 2% margin buffer
+                        arbs.append({
+                            "teams": match.get("teams", [o["name"] for o in outcomes]),
+                            "market": market.get("key", ""),
+                            "bookmaker": bookmaker.get("title", ""),
+                            "outcomes": [(o["name"], o["price"]) for o in outcomes],
+                            "profit_margin": round((1 - implied_prob) * 100, 2),
+                            "sport": sport_key,
+                            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         })
-                except Exception as e:
-                    st.warning(f"Failed to process market: {e}")
-    return opportunities
+                except:
+                    continue
+    return arbs
 
 if 'arb_history' not in st.session_state:
     st.session_state['arb_history'] = []
 
-if st.button("🔍 Run Arbitrage Scan"):
+if st.button("🔍 Scan for Arbitrage"):
     st.session_state['arb_history'] = []
-    for sport_key, sport_name in SPORT_KEYS.items():
+
+    for sport_key, sport_label in SPORT_KEYS.items():
+        st.subheader(f"🔎 {sport_label}")
         try:
             resp = requests.get(
                 f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds",
                 params={
                     "apiKey": API_KEY,
                     "regions": REGIONS,
-                    "markets": SPORT_MARKETS[sport_key]
+                    "markets": MARKETS
                 },
                 timeout=10
             )
             if resp.status_code == 200:
-                data = resp.json()
-                st.write(f"{sport_name}: Matches returned: {len(data)}")
-                arbs = find_arbs(data, sport_key)
+                matches = resp.json()
+                arbs = find_arbs(matches, sport_key)
                 st.session_state['arb_history'].extend(arbs)
+                st.success(f"✅ Matches: {len(matches)} | Arbs found: {len(arbs)}")
             else:
-                st.warning(f"{sport_name}: API Error {resp.status_code} - {resp.text}")
+                st.error(f"{sport_label} API Error: {resp.status_code} - {resp.text}")
         except Exception as e:
-            st.warning(f"{sport_name}: {e}")
+            st.error(f"{sport_label} Error: {e}")
 
 if st.session_state['arb_history']:
-    st.header("✅ Sorted Arbitrage Opportunities")
-    sorted_arbs = sorted(st.session_state['arb_history'], key=lambda x: x['profit_margin'], reverse=True)
-    for i, arb in enumerate(sorted_arbs):
-        st.subheader(f"{arb['match'][0]} vs {arb['match'][-1]} ({arb['timestamp']})")
-        st.caption(f"Market: {arb['market']} | Sport: {arb['sport']} | Bookmaker: {arb['bookmaker']}")
-        for name, odds in arb['outcomes']:
-            st.write(f"{name}: {odds}")
-        st.success(f"Profit Margin: {arb['profit_margin']}%")
+    st.header("📈 Arbitrage Opportunities")
+    for arb in sorted(st.session_state['arb_history'], key=lambda x: x['profit_margin'], reverse=True):
+        st.subheader(f"{arb['teams'][0]} vs {arb['teams'][-1]} ({arb['market']})")
+        st.caption(f"{arb['sport']} | Bookmaker: {arb['bookmaker']} | {arb['timestamp']}")
+        for name, price in arb['outcomes']:
+            st.write(f"• {name}: {price}")
+        st.success(f"Profit Margin: **{arb['profit_margin']}%**")
 
-        with st.expander("💰 Stake Calculator"):
-            stake = st.number_input(f"Total Stake #{i+1}", value=100.0, min_value=1.0, key=f"stake_{i}")
-            inv = sum(1 / o[1] for o in arb['outcomes'])
-            splits = [(o[0], round((1 / o[1]) / inv * stake, 2), o[1]) for o in arb['outcomes']]
-            payout = round(splits[0][1] * splits[0][2], 2)
-            profit = round(payout - stake, 2)
-            for name, amount, _ in splits:
-                st.write(f"Bet £{amount} on {name}")
-            st.success(f"Guaranteed Profit: £{profit}")
+        with st.expander("📊 Stake Calculator"):
+            total_stake = st.number_input("Total Stake (£)", value=100.0, min_value=1.0, key=arb['timestamp'])
+            inv_total = sum(1 / p for _, p in arb['outcomes'])
+            bet_allocs = [(name, round((1 / price) / inv_total * total_stake, 2), price)
+                          for name, price in arb['outcomes']]
+            payout = round(bet_allocs[0][1] * bet_allocs[0][2], 2)
+            profit = round(payout - total_stake, 2)
+
+            for name, stake, _ in bet_allocs:
+                st.write(f"🔸 Stake £{stake} on {name}")
+            st.success(f"💷 Guaranteed Profit: £{profit}")
 else:
-    st.info("No arbitrage opportunities found.")
+    st.info("No arbs found yet. Hit scan above.")
