@@ -7,7 +7,7 @@ load_dotenv()
 API_KEY = os.getenv("API_KEY")
 SPORT = 'soccer_epl'
 REGIONS = 'uk'
-MARKETS = 'h2h'
+MARKETS = 'h2h,spreads,totals,draw_no_bet,double_chance'
 URL = f'https://api.the-odds-api.com/v4/sports/{SPORT}/odds'
 
 def find_arbs(data):
@@ -17,15 +17,15 @@ def find_arbs(data):
         best_odds = {}
 
         for bookmaker in outcomes:
-            market = bookmaker.get('markets', [])[0] if bookmaker.get('markets') else {}
-            for outcome in market.get('outcomes', []):
-                name = outcome['name']
-                price = outcome['price']
-                if name not in best_odds or price > best_odds[name]['price']:
-                    best_odds[name] = {
-                        'price': price,
-                        'bookmaker': bookmaker['title']
-                    }
+            for market in bookmaker.get('markets', []):
+                for outcome in market.get('outcomes', []):
+                    name = outcome['name']
+                    price = outcome['price']
+                    if name not in best_odds or price > best_odds[name]['price']:
+                        best_odds[name] = {
+                            'price': price,
+                            'bookmaker': bookmaker['title']
+                        }
 
         if len(best_odds) == 2:
             team1, team2 = list(best_odds.keys())
