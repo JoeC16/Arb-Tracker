@@ -1,5 +1,5 @@
 
-# app.py
+# streamlit_app.py
 
 # streamlit_app.py
 
@@ -10,7 +10,6 @@ import pandas as pd
 ODDS_API_KEY = "e5cdfb14833bd219712d7ec1ce0b09b3"
 BASE_URL = "https://api.the-odds-api.com/v4"
 REGION = "uk"
-MARKET_TYPES = ['h2h', 'totals', 'spreads', 'draw_no_bet', 'double_chance']
 TOTAL_STAKE = 100
 MIN_PROFIT_MARGIN = 0.02
 
@@ -29,8 +28,8 @@ def fetch_odds(sport_key):
     params = {
         'apiKey': ODDS_API_KEY,
         'regions': REGION,
-        'markets': ",".join(MARKET_TYPES),
         'oddsFormat': 'decimal'
+        # full book mode: no 'markets' param at all
     }
     r = requests.get(url, params=params)
     if r.status_code != 200:
@@ -42,6 +41,9 @@ def calculate_implied_probabilities(odds):
 
 def detect_arbitrage(event):
     if not isinstance(event, dict):
+        return []
+
+    if not event.get("home_team") or not event.get("away_team"):
         return []
 
     arbitrages = []
@@ -84,14 +86,14 @@ def detect_arbitrage(event):
     return arbitrages
 
 # Streamlit UI
-st.title("💸 UK Bookmaker Arbitrage Finder")
+st.title("💸 UK Bookmaker Arbitrage Finder (Full Book Mode)")
 
 stake = st.number_input("Total Stake (£)", min_value=10, max_value=1000, value=TOTAL_STAKE)
 sports = fetch_sports()
 sport_titles = [s['title'] for s in sports if 'title' in s and 'key' in s]
 sport_map = {s['title']: s['key'] for s in sports if 'title' in s and 'key' in s}
 
-st.info(f"Scanning all {len(sport_titles)} sports from UK bookmakers.")
+st.info(f"Full book mode is active — scanning all markets in {len(sport_titles)} UK sports.")
 
 if st.button("🔍 Run Full Bookie Sweep"):
     all_arbs = []
@@ -103,8 +105,6 @@ if st.button("🔍 Run Full Bookie Sweep"):
         status.text(f"Fetching odds for: {sport_title}")
         odds_data = fetch_odds(sport_key)
         for event in odds_data:
-            if not isinstance(event, dict):
-                continue
             arbs = detect_arbitrage(event)
             all_arbs.extend(arbs)
         progress.progress((i + 1) / len(sport_titles))
