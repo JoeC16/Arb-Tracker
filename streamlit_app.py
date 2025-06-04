@@ -10,7 +10,7 @@ API_KEY = os.getenv("API_KEY")
 REGIONS = "uk,us,eu,au"
 
 SPORT_MARKETS = {
-    "soccer_epl": "h2h,spreads,totals",
+    "soccer": "h2h,spreads,totals,draw_no_bet,double_chance",
     "basketball_nba": "h2h,spreads,totals",
     "tennis_atp_french_open": "h2h",
     "cricket_t20_blast": "h2h",
@@ -18,7 +18,7 @@ SPORT_MARKETS = {
 }
 
 SPORT_KEYS = {
-    "soccer_epl": "⚽ Soccer: EPL",
+    "soccer": "⚽ Soccer (All)",
     "basketball_nba": "🏀 NBA",
     "tennis_atp_french_open": "🎾 ATP French Open",
     "cricket_t20_blast": "🏏 T20 Blast",
