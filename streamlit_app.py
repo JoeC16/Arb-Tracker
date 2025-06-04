@@ -1,8 +1,6 @@
 
 # streamlit_app.py
 
-# streamlit_app.py
-
 import streamlit as st
 import requests
 import pandas as pd
@@ -29,7 +27,6 @@ def fetch_odds(sport_key):
         'apiKey': ODDS_API_KEY,
         'regions': REGION,
         'oddsFormat': 'decimal'
-        # full book mode: no 'markets' param at all
     }
     r = requests.get(url, params=params)
     if r.status_code != 200:
@@ -77,6 +74,7 @@ def detect_arbitrage(event):
                         'market': market['key'],
                         'bookmakers': [o['bookmaker'] for o in best_odds.values()],
                         'odds': odds,
+                        'outcomes': list(best_odds.keys()),
                         'total_implied_prob': round(total_implied, 4),
                         'profit_margin_%': round(margin, 2),
                         'stake_distribution': [round(s, 2) for s in stakes],
@@ -85,15 +83,17 @@ def detect_arbitrage(event):
                     })
     return arbitrages
 
-# Streamlit UI
+# UI
+st.set_page_config(page_title="UK Bookie Arbitrage Scanner", layout="wide")
 st.title("💸 UK Bookmaker Arbitrage Finder (Full Book Mode)")
+st.caption("Using a £100 fixed stake — scanning ALL markets from ALL UK bookmakers.")
 
 stake = st.number_input("Total Stake (£)", min_value=10, max_value=1000, value=TOTAL_STAKE)
 sports = fetch_sports()
 sport_titles = [s['title'] for s in sports if 'title' in s and 'key' in s]
 sport_map = {s['title']: s['key'] for s in sports if 'title' in s and 'key' in s}
 
-st.info(f"Full book mode is active — scanning all markets in {len(sport_titles)} UK sports.")
+st.info(f"Full book mode active — scanning {len(sport_titles)} sports.")
 
 if st.button("🔍 Run Full Bookie Sweep"):
     all_arbs = []
@@ -117,6 +117,25 @@ if st.button("🔍 Run Full Bookie Sweep"):
     else:
         df = pd.DataFrame(all_arbs)
         df_sorted = df.sort_values("profit_margin_%", ascending=False)
-        st.success(f"✅ Found {len(df_sorted)} arbitrage opportunities!")
-        st.dataframe(df_sorted)
+
+        st.success(f"✅ Found {len(df_sorted)} arbitrage opportunities!\n")
+
+        for index, row in df_sorted.iterrows():
+            st.subheader(f"🏟 {row['event']} — {row['market']}")
+            st.markdown(f"**Sport:** {row['sport']}")
+            st.markdown(f"**Profit Margin:** `{row['profit_margin_%']}%` &nbsp;&nbsp;|&nbsp;&nbsp; **ROI:** `{row['ROI_%']}%`")
+            st.markdown(f"**Implied Probability Total:** `{row['total_implied_prob']}`")
+            st.write("### 💡 Bet Breakdown (Based on £100 Stake):")
+
+            for i in range(len(row['bookmakers'])):
+                bm = row['bookmakers'][i]
+                odds = row['odds'][i]
+                stake_amt = row['stake_distribution'][i]
+                outcome = row['outcomes'][i]
+                st.markdown(f"✅ Bet **£{stake_amt:.2f}** on '**{outcome}**' @ **{odds}** with **{bm}**")
+
+            st.markdown(f"💰 **Guaranteed Return:** £{TOTAL_STAKE + row['guaranteed_profit_£']:.2f}")
+            st.markdown(f"📈 **Guaranteed Profit:** £{row['guaranteed_profit_£']:.2f}")
+            st.markdown("---")
+
         st.download_button("💾 Download CSV", df_sorted.to_csv(index=False), file_name="arbitrage_opportunities.csv")
