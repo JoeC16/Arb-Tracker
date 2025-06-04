@@ -9,21 +9,9 @@ load_dotenv()
 API_KEY = os.getenv("API_KEY")
 REGIONS = "uk,us,eu,au"
 
-SPORT_MARKETS = {
-    "soccer": "h2h,spreads,totals,draw_no_bet,double_chance",
-    "basketball_nba": "h2h,spreads,totals",
-    "tennis_atp_french_open": "h2h",
-    "cricket_t20_blast": "h2h",
-    "rugby_union": "h2h"
-}
+SPORT_MARKETS = {'soccer_epl': 'h2h,spreads,totals,draw_no_bet,double_chance', 'soccer_spain_la_liga': 'h2h,spreads,totals,draw_no_bet,double_chance', 'soccer_italy_serie_a': 'h2h,spreads,totals,draw_no_bet,double_chance', 'soccer_germany_bundesliga': 'h2h,spreads,totals,draw_no_bet,double_chance', 'soccer_france_ligue_one': 'h2h,spreads,totals,draw_no_bet,double_chance', 'soccer_uefa_champs_league': 'h2h,spreads,totals,draw_no_bet,double_chance', 'soccer_uefa_europa_league': 'h2h,spreads,totals,draw_no_bet,double_chance', 'soccer': 'h2h,spreads,totals'}
 
-SPORT_KEYS = {
-    "soccer": "⚽ Soccer (All)",
-    "basketball_nba": "🏀 NBA",
-    "tennis_atp_french_open": "🎾 ATP French Open",
-    "cricket_t20_blast": "🏏 T20 Blast",
-    "rugby_union": "🏉 Rugby Union"
-}
+SPORT_KEYS = {'soccer_epl': '⚽ EPL', 'soccer_spain_la_liga': '🇪🇸 La Liga', 'soccer_italy_serie_a': '🇮🇹 Serie A', 'soccer_germany_bundesliga': '🇩🇪 Bundesliga', 'soccer_france_ligue_one': '🇫🇷 Ligue 1', 'soccer_uefa_champs_league': '🌍 UEFA CL', 'soccer_uefa_europa_league': '🌍 Europa League', 'soccer': '🌍 Other Soccer Leagues'}
 
 st.set_page_config(page_title="Arb Scanner MVP", layout="wide")
 st.title("🚀 MVP Arbitrage Scanner")
