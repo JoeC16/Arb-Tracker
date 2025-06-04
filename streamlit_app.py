@@ -7,30 +7,20 @@ from datetime import datetime
 
 load_dotenv()
 API_KEY = os.getenv("API_KEY")
-SPORTS_URL = "https://api.the-odds-api.com/v4/sports"
 REGIONS = "uk,us,eu,au"
-MARKET_POOL = ["h2h", "spreads", "totals", "team_totals"]
+MARKETS = "h2h,spreads,totals,team_totals,draw_no_bet,first_half_h2h,double_chance"
 
-def get_all_sport_keys():
-    try:
-        response = requests.get(SPORTS_URL, params={"apiKey": API_KEY}, timeout=10)
-        if response.status_code == 200:
-            data = response.json()
-            return {sport['key']: sport['title'] for sport in data if sport.get('active')}
-        else:
-            return {}
-    except:
-        return {}
+SPORT_KEYS = {
+    "soccer": "⚽ Soccer (All)",
+    "basketball_nba": "🏀 NBA",
+    "tennis_atp": "🎾 ATP Tennis",
+    "cricket_t20_blast": "🏏 T20 Blast",
+    "rugby_union": "🏉 Rugby Union"
+}
 
-def get_supported_markets(sport_key):
-    try:
-        url = f"https://api.the-odds-api.com/v4/sports/{sport_key}/markets"
-        response = requests.get(url, params={"apiKey": API_KEY}, timeout=10)
-        if response.status_code == 200:
-            return [m['key'] for m in response.json()]
-        return []
-    except:
-        return []
+st.set_page_config(page_title="Arb Scanner MVP", layout="wide")
+st.title("🚀 MVP Arbitrage Scanner")
+st.caption("Expanded to 3-outcome markets, broader markets, and a 2% margin buffer.")
 
 def find_arbs(data, sport_key):
     opportunities = []
@@ -44,7 +34,7 @@ def find_arbs(data, sport_key):
                     continue
                 try:
                     implied_prob = sum(1 / o['price'] for o in outcomes)
-                    if implied_prob < 1:
+                    if implied_prob < 1.02:
                         profit = (1 - implied_prob) * 100
                         match_teams = match.get('teams', [o['name'] for o in outcomes])
                         opportunities.append({
@@ -60,48 +50,31 @@ def find_arbs(data, sport_key):
                     continue
     return opportunities
 
-st.set_page_config(page_title="Multi-Outcome Arb Scanner", layout="wide")
-st.title("📊 Arbitrage Scanner — 2 & 3 Outcome Support")
-st.caption("Now includes 3-way markets (e.g. Win/Draw/Win). Scans all bookmakers and calculates optimal stakes.")
-
-sports_dict = get_all_sport_keys()
-if not sports_dict:
-    st.error("⚠️ Could not load sports list.")
-    st.stop()
-
-all_keys = list(sports_dict.keys())
-selected_sports = st.multiselect("Choose sports", all_keys, format_func=lambda x: sports_dict[x])
-if st.button("Select All"):
-    selected_sports = all_keys
-
 if 'arb_history' not in st.session_state:
     st.session_state['arb_history'] = []
 
 if st.button("🔍 Run Arbitrage Scan"):
     st.session_state['arb_history'] = []
-    for sport_key in selected_sports:
-        supported = get_supported_markets(sport_key)
-        valid_markets = [m for m in MARKET_POOL if m in supported]
-        if not valid_markets:
-            st.warning(f"{sports_dict[sport_key]}: No supported markets found.")
-            continue
+    for sport_key, sport_name in SPORT_KEYS.items():
         try:
             resp = requests.get(
                 f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds",
                 params={
                     "apiKey": API_KEY,
                     "regions": REGIONS,
-                    "markets": ",".join(valid_markets)
+                    "markets": MARKETS
                 },
                 timeout=10
             )
             if resp.status_code == 200:
-                arbs = find_arbs(resp.json(), sport_key)
+                data = resp.json()
+                st.write(f"{sport_name}: Matches returned: {len(data)}")
+                arbs = find_arbs(data, sport_key)
                 st.session_state['arb_history'].extend(arbs)
             else:
-                st.warning(f"{sports_dict[sport_key]}: API Error {resp.status_code}")
+                st.warning(f"{sport_name}: API Error {resp.status_code}")
         except Exception as e:
-            st.warning(f"{sports_dict[sport_key]}: {e}")
+            st.warning(f"{sport_name}: {e}")
 
 if st.session_state['arb_history']:
     st.header("✅ Sorted Arbitrage Opportunities")
