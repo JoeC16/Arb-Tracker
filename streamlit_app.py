@@ -8,19 +8,26 @@ from datetime import datetime
 load_dotenv()
 API_KEY = os.getenv("API_KEY")
 REGIONS = "uk,us,eu,au"
-MARKETS = "h2h,spreads,totals,team_totals,draw_no_bet,double_chance"
+
+SPORT_MARKETS = {
+    "soccer_epl": "h2h,spreads,totals",
+    "basketball_nba": "h2h,spreads,totals",
+    "tennis_atp_french_open": "h2h",
+    "cricket_t20_blast": "h2h",
+    "rugby_union": "h2h"
+}
 
 SPORT_KEYS = {
     "soccer_epl": "⚽ Soccer: EPL",
     "basketball_nba": "🏀 NBA",
     "tennis_atp_french_open": "🎾 ATP French Open",
     "cricket_t20_blast": "🏏 T20 Blast",
-    "rugby_union_international": "🏉 Rugby Union Intl"
+    "rugby_union": "🏉 Rugby Union"
 }
 
 st.set_page_config(page_title="Arb Scanner MVP", layout="wide")
 st.title("🚀 MVP Arbitrage Scanner")
-st.caption("Expanded to 3-outcome markets, broader markets, and a 2% margin buffer.")
+st.caption("Now using sport-specific market types to avoid 422 errors.")
 
 def find_arbs(data, sport_key):
     opportunities = []
@@ -62,7 +69,7 @@ if st.button("🔍 Run Arbitrage Scan"):
                 params={
                     "apiKey": API_KEY,
                     "regions": REGIONS,
-                    "markets": MARKETS
+                    "markets": SPORT_MARKETS[sport_key]
                 },
                 timeout=10
             )

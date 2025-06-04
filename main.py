@@ -1,13 +1,11 @@
 
 import requests
-import os
-from dotenv import load_dotenv
+import streamlit as st
 
-load_dotenv()
-API_KEY = os.getenv("API_KEY")
+API_KEY = st.secrets["API_KEY"]
 SPORT = 'soccer_epl'
 REGIONS = 'uk'
-MARKETS = 'h2h,spreads,totals,draw_no_bet,double_chance'
+MARKETS = 'h2h,spreads,totals'
 URL = f'https://api.the-odds-api.com/v4/sports/{SPORT}/odds'
 
 def find_arbs(data):
