@@ -1,6 +1,8 @@
 
 # app.py
 
+# streamlit_app.py
+
 import streamlit as st
 import requests
 import pandas as pd
@@ -15,7 +17,11 @@ MIN_PROFIT_MARGIN = 0.02
 @st.cache_data(show_spinner=False)
 def fetch_sports():
     url = f"{BASE_URL}/sports/?apiKey={ODDS_API_KEY}"
-    return requests.get(url).json()
+    r = requests.get(url)
+    if r.status_code != 200:
+        st.error(f"Failed to fetch sports: {r.status_code} - {r.text}")
+        return []
+    return r.json()
 
 @st.cache_data(show_spinner=False)
 def fetch_odds(sport_key):
@@ -26,12 +32,18 @@ def fetch_odds(sport_key):
         'markets': ",".join(MARKET_TYPES),
         'oddsFormat': 'decimal'
     }
-    return requests.get(url, params=params).json()
+    r = requests.get(url, params=params)
+    if r.status_code != 200:
+        return []
+    return r.json()
 
 def calculate_implied_probabilities(odds):
     return [1 / o for o in odds if o > 0]
 
 def detect_arbitrage(event):
+    if not isinstance(event, dict):
+        return []
+
     arbitrages = []
     for bookmaker in event.get('bookmakers', []):
         for market in bookmaker.get('markets', []):
@@ -58,10 +70,10 @@ def detect_arbitrage(event):
                     profit = min([s * o for s, o in zip(stakes, odds)]) - TOTAL_STAKE
                     roi = profit / TOTAL_STAKE * 100
                     arbitrages.append({
-                        'sport': event['sport_title'],
-                        'event': f"{event['home_team']} vs {event.get('away_team', '')}",
+                        'sport': event.get('sport_title', 'N/A'),
+                        'event': f"{event.get('home_team', '')} vs {event.get('away_team', '')}",
                         'market': market['key'],
-                        'bookmakers': list(best_odds.values()),
+                        'bookmakers': [o['bookmaker'] for o in best_odds.values()],
                         'odds': odds,
                         'total_implied_prob': round(total_implied, 4),
                         'profit_margin_%': round(margin, 2),
@@ -71,25 +83,40 @@ def detect_arbitrage(event):
                     })
     return arbitrages
 
-# UI
-st.title("🎯 UK Bookmakers Arbitrage Finder")
+# Streamlit UI
+st.title("💸 UK Bookmaker Arbitrage Finder")
+
 stake = st.number_input("Total Stake (£)", min_value=10, max_value=1000, value=TOTAL_STAKE)
 sports = fetch_sports()
-selected_sports = st.multiselect("Select Sports to Scan", options=[s['title'] for s in sports], default=[])
+sport_titles = [s['title'] for s in sports if 'title' in s and 'key' in s]
+sport_map = {s['title']: s['key'] for s in sports if 'title' in s and 'key' in s}
 
-if st.button("Scan for Arbitrage Opportunities"):
+st.info(f"Scanning all {len(sport_titles)} sports from UK bookmakers.")
+
+if st.button("🔍 Run Full Bookie Sweep"):
     all_arbs = []
-    sport_map = {s['title']: s['key'] for s in sports}
-    for sport_title in selected_sports:
-        odds_data = fetch_odds(sport_map[sport_title])
+    progress = st.progress(0)
+    status = st.empty()
+
+    for i, sport_title in enumerate(sport_titles):
+        sport_key = sport_map[sport_title]
+        status.text(f"Fetching odds for: {sport_title}")
+        odds_data = fetch_odds(sport_key)
         for event in odds_data:
+            if not isinstance(event, dict):
+                continue
             arbs = detect_arbitrage(event)
             all_arbs.extend(arbs)
+        progress.progress((i + 1) / len(sport_titles))
+
+    progress.empty()
+    status.empty()
 
     if not all_arbs:
         st.warning("No arbitrage opportunities found at this time.")
     else:
         df = pd.DataFrame(all_arbs)
         df_sorted = df.sort_values("profit_margin_%", ascending=False)
+        st.success(f"✅ Found {len(df_sorted)} arbitrage opportunities!")
         st.dataframe(df_sorted)
-        st.download_button("Download CSV", df_sorted.to_csv(index=False), file_name="arbitrage_opportunities.csv")
+        st.download_button("💾 Download CSV", df_sorted.to_csv(index=False), file_name="arbitrage_opportunities.csv")
