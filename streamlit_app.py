@@ -1,169 +1,166 @@
-
-# streamlit_app.py
+# app.py
 
 import streamlit as st
 import requests
 import pandas as pd
+import time
+from itertools import combinations
 
-ODDS_API_KEY = "e5cdfb14833bd219712d7ec1ce0b09b3"
-BASE_URL = "https://api.the-odds-api.com/v4"
-REGION = "uk"
-TOTAL_STAKE = 100
-MIN_PROFIT_MARGIN = 0.02
+ODDS_API_KEY = st.secrets["oddsapi_key"]
+SUPPORTED_SPORTS = ["tennis", "mma", "darts"]
 
-@st.cache_data(show_spinner=False)
-def fetch_sports():
-    url = f"{BASE_URL}/sports/?apiKey={ODDS_API_KEY}"
-    r = requests.get(url)
-    if r.status_code != 200:
-        st.error(f"Failed to fetch sports: {r.status_code} - {r.text}")
-        return []
-    return r.json()
+st.set_page_config(page_title="Arbitrage Scanner", layout="wide")
+st.title("💸 Arbitrage Scanner (2-Way Sports)")
 
-@st.cache_data(show_spinner=False)
-def fetch_odds(sport_key):
-    url = f"{BASE_URL}/sports/{sport_key}/odds/"
+refresh_interval = st.sidebar.number_input("⏱ Refresh Interval (minutes)", min_value=1, max_value=60, value=5)
+bankroll = st.sidebar.number_input("💰 Bankroll (£)", min_value=10, value=100)
+run_button = st.sidebar.button("🔁 Run Scan Now")
+
+def fetch_oddsapi_data():
+    url = "https://api.the-odds-api.com/v4/sports/upcoming/odds"
     params = {
-        'apiKey': ODDS_API_KEY,
-        'regions': REGION,
-        'oddsFormat': 'decimal'
+        "apiKey": ODDS_API_KEY,
+        "regions": "uk",
+        "markets": "h2h",
+        "oddsFormat": "decimal"
     }
-    r = requests.get(url, params=params)
-    if r.status_code != 200:
-        return []
-    return r.json()
+    response = requests.get(url, params=params)
+    if response.status_code == 200:
+        return response.json()
+    st.error(f"OddsAPI error: {response.status_code}")
+    return []
 
-def calculate_implied_probabilities(odds):
-    return [1 / o for o in odds if o > 0]
+def fake_betfair_lay_odds(event_name, team_name):
+    # Placeholder for real Betfair API
+    return round(1.8 + 0.1 * (hash(team_name) % 5), 2)
 
-def detect_arbitrage(event):
-    if not isinstance(event, dict):
-        return []
+def back_back_arbitrage(bookmakers, event_name, sport):
+    opportunities = []
 
-    if not event.get("home_team") or not event.get("away_team"):
-        return []
+    for (book1, book2) in combinations(bookmakers, 2):
+        try:
+            market1 = next(m for m in book1["markets"] if m["key"] == "h2h")
+            market2 = next(m for m in book2["markets"] if m["key"] == "h2h")
+        except StopIteration:
+            continue
 
-    arbitrages = []
+        o1 = market1["outcomes"]
+        o2 = market2["outcomes"]
+        if len(o1) != 2 or len(o2) != 2:
+            continue
 
-    for bookmaker in event.get('bookmakers', []):
-        for market in bookmaker.get('markets', []):
-            market_key = market.get('key', '')
+        team1 = o1[0]["name"]
+        team2 = o2[1]["name"]
+        odds1 = o1[0]["price"]
+        odds2 = o2[1]["price"]
 
-            # ❌ Skip lay or exchange markets
-            if 'lay' in market_key or 'exchange' in market_key:
+        implied_prob = 1 / odds1 + 1 / odds2
+        if implied_prob >= 1:
+            continue
+
+        stake1 = bankroll * (1 / odds1) / implied_prob
+        stake2 = bankroll * (1 / odds2) / implied_prob
+        payout1 = stake1 * odds1
+        payout2 = stake2 * odds2
+        profit = min(payout1, payout2) - bankroll
+
+        opportunities.append({
+            "Type": "Back/Back",
+            "Sport": sport,
+            "Match": event_name,
+            "Outcome A": team1,
+            "Outcome B": team2,
+            "Bookmaker A": book1["title"],
+            "Bookmaker B": book2["title"],
+            "Odds A": odds1,
+            "Odds B": odds2,
+            "Stake A": round(stake1, 2),
+            "Stake B": round(stake2, 2),
+            "Profit (£)": round(profit, 2),
+            "ROI (%)": round(profit / bankroll * 100, 2)
+        })
+
+    return opportunities
+
+def back_lay_arbitrage(bookmakers, event_name, sport):
+    opportunities = []
+
+    for book in bookmakers:
+        for market in book["markets"]:
+            if market["key"] != "h2h":
                 continue
 
-            outcomes = market.get('outcomes', [])
-            if len(outcomes) not in [2, 3]:
-                continue
+            for outcome in market["outcomes"]:
+                team = outcome["name"]
+                back_odds = outcome["price"]
+                lay_odds = fake_betfair_lay_odds(event_name, team)
 
-            best_odds = {}
-            for outcome in outcomes:
-                name = outcome['name']
-                price = outcome['price']
-
-                # ❌ Skip extreme/stale odds
-                if price > 50.0 or price <= 1.01:
+                if lay_odds <= 1 or back_odds >= lay_odds:
                     continue
 
-                if name not in best_odds or price > best_odds[name]['price']:
-                    best_odds[name] = {'price': price, 'bookmaker': bookmaker['title']}
+                back_stake = bankroll
+                lay_stake = (back_stake * back_odds) / lay_odds
+                liability = lay_stake * (lay_odds - 1)
+                total_outlay = back_stake + liability
+                profit = (back_odds * back_stake - total_outlay)
 
-            if len(best_odds) != len(set(best_odds.keys())):
-                continue
-            if len(best_odds) not in [2, 3]:
-                continue
+                if profit > 0:
+                    opportunities.append({
+                        "Type": "Back/Lay",
+                        "Sport": sport,
+                        "Match": event_name,
+                        "Outcome": team,
+                        "Bookmaker": book["title"],
+                        "Back Odds": back_odds,
+                        "Exchange Lay Odds": lay_odds,
+                        "Back Stake": round(back_stake, 2),
+                        "Lay Stake": round(lay_stake, 2),
+                        "Profit (£)": round(profit, 2),
+                        "ROI (%)": round(profit / bankroll * 100, 2)
+                    })
+    return opportunities
 
-            odds = [o['price'] for o in best_odds.values()]
-            implied = calculate_implied_probabilities(odds)
-            total_implied = sum(implied)
-            if total_implied >= 1.0:
-                continue
+def process_data():
+    raw_data = fetch_oddsapi_data()
+    backback_rows = []
+    backlay_rows = []
 
-            stakes = [(1/o)/total_implied * TOTAL_STAKE for o in odds]
-            returns = [s * o for s, o in zip(stakes, odds)]
-            min_return = min(returns)
+    for event in raw_data:
+        sport = event.get("sport_key", "")
+        if not any(s in sport for s in SUPPORTED_SPORTS):
+            continue
 
-            # ❌ Reject non-profitable or unrealistic returns
-            if min_return < TOTAL_STAKE:
-                continue
-            if max(returns) > TOTAL_STAKE * 2:
-                continue
+        teams = event.get("teams", [])
+        if len(teams) != 2:
+            continue
 
-            profit = min_return - TOTAL_STAKE
-            roi = profit / TOTAL_STAKE * 100
+        event_name = f"{teams[0]} vs {teams[1]}"
+        bookmakers = event.get("bookmakers", [])
 
-            arbitrages.append({
-                'sport': event.get('sport_title', 'N/A'),
-                'event': f"{event.get('home_team', '')} vs {event.get('away_team', '')}",
-                'market': market_key,
-                'bookmakers': [o['bookmaker'] for o in best_odds.values()],
-                'odds': odds,
-                'outcomes': list(best_odds.keys()),
-                'outcome_type': f"{len(best_odds)}-way",
-                'total_implied_prob': round(total_implied, 4),
-                'profit_margin_%': round((1 - total_implied) * 100, 2),
-                'stake_distribution': [round(s, 2) for s in stakes],
-                'guaranteed_profit_£': round(profit, 2),
-                'ROI_%': round(roi, 2)
-            })
+        backback_rows.extend(back_back_arbitrage(bookmakers, event_name, sport))
+        backlay_rows.extend(back_lay_arbitrage(bookmakers, event_name, sport))
 
-    return arbitrages
+    return pd.DataFrame(backback_rows), pd.DataFrame(backlay_rows)
 
-# --- Streamlit App ---
+if run_button or "autorefresh" not in st.session_state:
+    st.session_state["autorefresh"] = True
 
-st.set_page_config(page_title="UK Bookie Arbitrage Scanner", layout="wide")
-st.title("💸 UK Bookmaker Arbitrage Finder (Full Book Mode)")
-st.caption("Using a £100 fixed stake — scanning ALL markets from ALL UK bookmakers.")
+tab1, tab2 = st.tabs(["📊 Back/Back Arbitrage", "📈 Back/Lay Arbitrage"])
 
-stake = st.number_input("Total Stake (£)", min_value=10, max_value=1000, value=TOTAL_STAKE)
-sports = fetch_sports()
-sport_titles = [s['title'] for s in sports if 'title' in s and 'key' in s]
-sport_map = {s['title']: s['key'] for s in sports if 'title' in s and 'key' in s}
-
-st.info(f"Full book mode active — scanning {len(sport_titles)} sports.")
-
-if st.button("🔍 Run Full Bookie Sweep"):
-    all_arbs = []
-    progress = st.progress(0)
-    status = st.empty()
-
-    for i, sport_title in enumerate(sport_titles):
-        sport_key = sport_map[sport_title]
-        status.text(f"Fetching odds for: {sport_title}")
-        odds_data = fetch_odds(sport_key)
-        for event in odds_data:
-            arbs = detect_arbitrage(event)
-            all_arbs.extend(arbs)
-        progress.progress((i + 1) / len(sport_titles))
-
-    progress.empty()
-    status.empty()
-
-    if not all_arbs:
-        st.warning("No arbitrage opportunities found at this time.")
+with tab1:
+    st.write("Scanning for profitable back/back arbitrage...")
+    df_backback, _ = process_data()
+    if df_backback.empty:
+        st.warning("No back/back arbs found.")
     else:
-        df = pd.DataFrame(all_arbs)
-        df_sorted = df.sort_values("profit_margin_%", ascending=False)
+        st.success(f"{len(df_backback)} opportunities found.")
+        st.dataframe(df_backback)
 
-        st.success(f"✅ Found {len(df_sorted)} arbitrage opportunities!\n")
-
-        for index, row in df_sorted.iterrows():
-            st.subheader(f"🏟 {row['event']} — {row['market']}")
-            st.markdown(f"**Sport:** {row['sport']}")
-            st.markdown(f"**Profit Margin:** `{row['profit_margin_%']}%` &nbsp;&nbsp;|&nbsp;&nbsp; **ROI:** `{row['ROI_%']}%`")
-            st.markdown(f"**Implied Probability Total:** `{row['total_implied_prob']}`")
-            st.write("### 💡 Bet Breakdown (Based on £100 Stake):")
-
-            for i in range(len(row['bookmakers'])):
-                bm = row['bookmakers'][i]
-                odds = row['odds'][i]
-                stake_amt = row['stake_distribution'][i]
-                outcome = row['outcomes'][i]
-                st.markdown(f"✅ Bet **£{stake_amt:.2f}** on '**{outcome}**' @ **{odds}** with **{bm}**")
-
-            st.markdown(f"💰 **Guaranteed Return:** £{TOTAL_STAKE + row['guaranteed_profit_£']:.2f}")
-            st.markdown(f"📈 **Guaranteed Profit:** £{row['guaranteed_profit_£']:.2f}")
-            st.markdown("---")
-
-        st.download_button("💾 Download CSV", df_sorted.to_csv(index=False), file_name="arbitrage_opportunities.csv")
+with tab2:
+    st.write("Scanning for profitable back/lay arbitrage...")
+    _, df_backlay = process_data()
+    if df_backlay.empty:
+        st.warning("No back/lay arbs found.")
+    else:
+        st.success(f"{len(df_backlay)} opportunities found.")
+        st.dataframe(df_backlay)
