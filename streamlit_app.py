@@ -24,10 +24,13 @@ def get_available_sports():
 
 sports_list = get_available_sports()
 sports_map = {s["title"]: s["key"] for s in sports_list if s.get("active")}
+sports_options = list(sports_map.keys())
+default_selection = sports_options[:3] if len(sports_options) >= 3 else sports_options
+
 selected_titles = st.sidebar.multiselect(
     "Choose Sports to Scan",
-    options=list(sports_map.keys()),
-    default=["Soccer"]
+    options=sports_options,
+    default=default_selection
 )
 sports_filter = [sports_map[title] for title in selected_titles]
 
