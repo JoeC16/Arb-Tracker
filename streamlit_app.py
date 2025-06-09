@@ -7,18 +7,40 @@ import difflib
 st.set_page_config(page_title="Arbitrage Betting Scanner", layout="wide")
 st.title("🎯 Arbitrage Betting Scanner")
 
-# API key from Streamlit secrets
+# Secure API key from Streamlit secrets
 ODDS_API_KEY = st.secrets["ODDS_API_KEY"]
 
-# Sidebar UI
+# -------------------------------
+# Fetch Available Sports Dynamically
+# -------------------------------
+@st.cache_data(ttl=3600)
+def get_available_sports():
+    url = "https://api.the-odds-api.com/v4/sports/"
+    resp = requests.get(url, params={"apiKey": ODDS_API_KEY})
+    if resp.status_code != 200:
+        st.error("Could not fetch sports list from OddsAPI.")
+        return []
+    return resp.json()
+
+sports_list = get_available_sports()
+sports_map = {s["title"]: s["key"] for s in sports_list if s.get("active")}
+selected_titles = st.sidebar.multiselect(
+    "Choose Sports to Scan",
+    options=list(sports_map.keys()),
+    default=["Soccer"]
+)
+sports_filter = [sports_map[title] for title in selected_titles]
+
+# -------------------------------
+# User Config
+# -------------------------------
 bankroll = st.sidebar.number_input("Bankroll (£)", value=100.0)
 min_profit = st.sidebar.slider("Minimum Profit %", 0.1, 5.0, 1.0)
-sports_filter = st.sidebar.multiselect("Sports", ["soccer", "tennis", "basketball"], default=["soccer"])
 refresh = st.sidebar.slider("Auto-refresh (sec)", 30, 300, 60)
 
-# ---------------------
-# API Calls
-# ---------------------
+# -------------------------------
+# API Helpers
+# -------------------------------
 
 @st.cache_data(ttl=300)
 def get_oddsapi_data(sport):
@@ -44,9 +66,9 @@ def get_smarkets_quotes(market_id):
     url = f"https://api.smarkets.com/v3/markets/{market_id}/quotes/"
     return requests.get(url).json()
 
-# ---------------------
-# Utilities
-# ---------------------
+# -------------------------------
+# Utility Logic
+# -------------------------------
 
 def match_event_name(name, candidates):
     return difflib.get_close_matches(name, candidates, n=1, cutoff=0.6)
@@ -57,16 +79,16 @@ def is_arbitrage(back, lay):
     margin = (1 / back) + (1 / lay)
     return margin < 1, round((1 - margin) * 100, 2)
 
-# ---------------------
-# Main Logic
-# ---------------------
+# -------------------------------
+# Main Arbitrage Logic
+# -------------------------------
 
 arbs = []
 for sport in sports_filter:
     oddsapi_events = get_oddsapi_data(sport)
     smarket_event_ids = get_smarkets_event_ids()
     
-    # Load all Smarkets odds first
+    # Build map of Smarkets lay prices
     smarkets = {}
     for eid in smarket_event_ids:
         ed = get_smarkets_event(eid)
@@ -82,7 +104,7 @@ for sport in sports_filter:
                     "market_id": mid
                 }
 
-    # Match with OddsAPI
+    # Scan for arbitrage
     for ev in oddsapi_events:
         all_teams = " vs ".join(ev.get("teams", []))
         kickoff = ev.get("commence_time", "")[:19]
@@ -111,9 +133,9 @@ for sport in sports_filter:
                             "Kickoff": kickoff
                         })
 
-# ---------------------
+# -------------------------------
 # Display
-# ---------------------
+# -------------------------------
 
 df = pd.DataFrame(arbs)
 if not df.empty:
@@ -121,4 +143,4 @@ if not df.empty:
     st.dataframe(df.sort_values("Profit %", ascending=False))
 else:
     st.warning("No arbitrage opportunities found.")
-    st.caption("Try adjusting filters or bankroll.")
+    st.caption("Try selecting different sports or adjusting filters.")
